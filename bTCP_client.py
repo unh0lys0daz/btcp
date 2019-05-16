@@ -68,8 +68,9 @@ crc_table = [0,0x77073096,0xEE0E612C,0x990951BA,
 
 def calculate_checksum(packet):
     CRC = 0xffffffff
-    for i in range(16):
-        nlookup = (CRC ^ int(iter_unpack("B", packet))) & 0xff
+    parts = iter_unpack("B",packet)
+    for p in parts:
+        nlookup = (CRC ^ int(p[0])) & 0xff
         CRC = (CRC >> 8) ^ crc_table[nlookup]
     return CRC ^ 0xffffffff
 
@@ -86,10 +87,12 @@ def connect(dest_ip, dest_port):
     # send syn
     sock.sendto(syn_packet, (dest_ip, dest_port))
     # recv syn-ack
+    sock.settimeout(2)
     try:
-        (data, addr) = sock.recvfrom()
-    except:
+        (data, addr) = sock.recvfrom(1016)
+    except socket.timeout:
         print("Timeout")
+        return None
     synack_tuple = unpack(header_format, data)
     syn_nr_synack = synack_tuple[1]
     ack_nr_synack = synack_tuple[2]
@@ -137,17 +140,20 @@ def send_file(filename, dest_ip, dest_port):
         if file_done:
             break
 
-        sock.settimeout(2)
-        try:
-            data, addr = sock.recvfrom
-        except socket.timeout:
-            print("TIMEOUT")
-            return False
-        if data:
+        # Some nice loop to make handle corrupted packages being received
+        while True:
+            sock.settimeout(2)
+            try:
+                data, addr = sock.recvfrom(1016)
+            except socket.timeout:
+                print("TIMEOUT")
+                return False
             (str_id, syn_recv, seq, flag, window, siz, checksum) = unpack(header_format, data)
             if checksum != get_checksum(str_id, syn_recv, seq, flag, window, siz):
                 print("CORRUPTED PACKET")
-
+                sock.sendto( packet, (dest_ip, dest_port))
+            else:
+                break
 
 
 connect("127.0.0.1",9001)

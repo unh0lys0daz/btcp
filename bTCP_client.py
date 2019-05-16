@@ -1,5 +1,6 @@
 #!/usr/local/bin/python3
 import socket, argparse, random
+from random import randint
 from struct import *
 
 #Handle arguments
@@ -20,15 +21,15 @@ BTCP_RST = 0x8
 
 #bTCP header
 header_format = "IHHBBHI"
-bTCP_header = pack(header_format, randint(0,100), syn_number, ack_number, flags, window, 1000, checksum)
-bTCP_payload = ""
-udp_payload = bTCP_header
+#bTCP_header = pack(header_format, randint(0,100), syn_number, ack_number, flags, window, 1000, checksum)
+#bTCP_payload = ""
+#udp_payload = bTCP_header
 
 #UDP socket which will transport your bTCP packets
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+#sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 #send payload
-sock.sendto(udp_payload, (destination_ip, destination_port))
+#sock.sendto(udp_payload, (destination_ip, destination_port))
 
 # crc lookup table, to speed things up.
 crc_table = [0,0x77073096,0xEE0E612C,0x990951BA,
@@ -68,7 +69,7 @@ crc_table = [0,0x77073096,0xEE0E612C,0x990951BA,
 def calculate_checksum(packet):
     CRC = 0xffffffff
     for i in range(16):
-        nlookup = (CRC ^ iter_unpack("B", packet)) & 0xff
+        nlookup = (CRC ^ int(iter_unpack("B", packet))) & 0xff
         CRC = (CRC >> 8) ^ crc_table[nlookup]
     return CRC ^ 0xffffffff
 
@@ -105,8 +106,48 @@ def connect(dest_ip, dest_port):
     bTCP_header_ack = pack(header_format, stream_id, ack_nr_synack, syn_nr_synack+1, BTCP_ACK, window_synack, size_synack, calculate_checksum(pseudo_header_ack))
     sock.sendto(bTCP_header_ack, (dest_ip, dest_port))
 
-    return (stream_id,
+    return (stream_id, sock, window_synack)
   # send ack + data (or should we return first and then start off with the first ack (from the handshake)???
 
+def make_packet(str_id, syn_nr, ack_nr, flags, window, size, data):
+    pseudo_header = pack(header_format, str_id, syn_nr, ack_nr, flags, window, size, 0)
+    packet = pack(header_format, str_id, syn_nr, ack_nr, flags, window, size, calculate_checksum(pseudo_header)) + data
+    return packet
+
+def get_checksum(str_id, syn_nr, ack_nr, flags, window, size):
+    hdr = pack(header_format, str_id, syn_nr, ack_nr, flags, window, size, 0)
+    return calculate_checksum(hdr)
+
+def send_file(filename, dest_ip, dest_port):
+    stream_id, sock, window = connect(dest_ip, dest_port)
+    file_handle = open(filename, 'r')
+    seq = 1
+    ack = 1
+    while True:
+        file_done = False
+        for i in range(window):
+            chunk = file_handle.read(1000)
+            if len(chunk) == 0:
+                file_done = True
+                break
+            packet = make_packet(stream_id, seq, ack, BTCP_ACK, window, len(chunk), chunk)
+            sock.sendto( packet, (dest_ip, dest_port))
+            seq += len(chunk)
+
+        if file_done:
+            break
+
+        sock.settimeout(2)
+        try:
+            data, addr = sock.recvfrom
+        except socket.timeout:
+            print("TIMEOUT")
+            return False
+        if data:
+            (str_id, syn_recv, seq, flag, window, siz, checksum) = unpack(header_format, data)
+            if checksum != get_checksum(str_id, syn_recv, seq, flag, window, siz):
+                print("CORRUPTED PACKET")
 
 
+
+connect("127.0.0.1",9001)

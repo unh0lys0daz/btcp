@@ -13,10 +13,10 @@ destination_ip = "127.0.0.1"
 destination_port = 9001
 
 #flags
-BTCP_FIN = 0x0001
-BTCP_SYN = 0x0010
-BTCP_ACK = 0x0100
-BTCP_RST = 0x1000
+BTCP_FIN = 0x1
+BTCP_SYN = 0x2
+BTCP_ACK = 0x4
+BTCP_RST = 0x8
 
 #bTCP header
 header_format = "IHHBBHI"

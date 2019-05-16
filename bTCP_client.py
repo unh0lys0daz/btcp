@@ -68,7 +68,7 @@ crc_table = [0,0x77073096,0xEE0E612C,0x990951BA,
 def calculate_checksum(packet):
     CRC = 0xffffffff
     for i in range(16):
-        nlookup = (CRC ^ iter_unpack("B"1z, packet)) & 0xff
+        nlookup = (CRC ^ iter_unpack("B", packet)) & 0xff
         CRC = (CRC >> 8) ^ crc_table[nlookup]
     return CRC ^ 0xffffffff
 
@@ -107,3 +107,6 @@ def connect(dest_ip, dest_port):
 
     return (stream_id,
   # send ack + data (or should we return first and then start off with the first ack (from the handshake)???
+
+
+

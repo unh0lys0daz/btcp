@@ -22,7 +22,7 @@ BTCP_RST = 0x8
 
 #bTCP header
 header_format = "!IHHBBHI"
-packet_format = "!16s1000s"
+packet_format = "!IHHBBHI1000s"
 
 #bTCP_header = pack(header_format, randint(0,100), syn_number, ack_number, flags, window, 1000, checksum)
 #bTCP_payload = ""
@@ -37,7 +37,7 @@ packet_format = "!16s1000s"
 
 
 def connect(dest_ip, dest_port):
-    data = bytes(1000)
+    pad_data = bytes(1000)
     stream_id = randint(1,100)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
@@ -45,7 +45,7 @@ def connect(dest_ip, dest_port):
     pseudo_header_syn = pack(header_format, stream_id, 0, 0, BTCP_SYN, 255, 0, 0)
     bTCP_header_syn = pack(header_format, stream_id, 0, 0, BTCP_SYN, 255, 0, bTCP.calculate_checksum(pseudo_header_syn))
 
-    syn_packet = bTCP_header_syn + data
+    syn_packet = bTCP_header_syn + pad_data
     # send syn
     sock.sendto(syn_packet, (dest_ip, dest_port))
     # recv syn-ack
@@ -55,7 +55,7 @@ def connect(dest_ip, dest_port):
     except socket.timeout:
         print("Timeout")
         return None
-    synack_tuple = unpack(header_format, data)
+    synack_tuple = unpack(packet_format, data)
     syn_nr_synack = synack_tuple[1]
     ack_nr_synack = synack_tuple[2]
     flags_synack = synack_tuple[3]
@@ -76,7 +76,11 @@ def connect(dest_ip, dest_port):
 
 
 def send_file(filename, dest_ip, dest_port):
-    stream_id, sock, window = connect(dest_ip, dest_port)
+    try:
+        stream_id, sock, window = connect(dest_ip, dest_port)
+    except:
+        print("Connection failed")
+        return
     file_handle = open(filename, 'r')
     seq = 1
     ack = 1
@@ -102,7 +106,7 @@ def send_file(filename, dest_ip, dest_port):
             except socket.timeout:
                 print("TIMEOUT")
                 return False
-            (str_id, syn_recv, seq, flag, window, siz, checksum) = unpack(header_format, data)
+            (str_id, syn_recv, seq, flag, window, siz, checksum, junk) = unpack(packet_format, data)
             if checksum != bTCP.get_checksum(str_id, syn_recv, seq, flag, window, siz):
                 print("CORRUPTED PACKET")
                 sock.sendto( packet, (dest_ip, dest_port))
@@ -110,4 +114,4 @@ def send_file(filename, dest_ip, dest_port):
                 break
 
 
-connect("127.0.0.1",9001)
+send_file("bTCP_server.py", "127.0.0.1", 9001)

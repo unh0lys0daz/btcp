@@ -8,7 +8,7 @@ import bTCP
 parser = argparse.ArgumentParser()
 parser.add_argument("-w", "--window", help="Define bTCP window size", type=int, default=100)
 parser.add_argument("-t", "--timeout", help="Define bTCP timeout in seconds", type=float, default=2.00)
-parser.add_argument("-i","--input", help="File to send", default="tmp.file")
+parser.add_argument("-i","--input", help="File to send", default="input.txt")
 args = parser.parse_args()
 
 destination_ip = "127.0.0.1"
@@ -43,11 +43,10 @@ def connect(dest_ip, dest_port):
     window = args.window
     timeout = args.timeout
 
+    print("Got here")
     # syn packet creation
-    pseudo_header_syn = pack(header_format, stream_id, 0, 0, BTCP_SYN, window, 0, 0)
-    bTCP_header_syn = pack(header_format, stream_id, 0, 0, BTCP_SYN, window, 0, bTCP.calculate_checksum(pseudo_header_syn))
+    syn_packet = bTCP.make_packet(stream_id, 0, 0, BTCP_SYN, window, 0, bytes(1000))
 
-    syn_packet = bTCP_header_syn + pad_data
     # send syn
     sock.sendto(syn_packet, (dest_ip, dest_port))
     # recv syn-ack, loop to handle corrupted packages and time-outs
@@ -59,19 +58,19 @@ def connect(dest_ip, dest_port):
             print("Timeout")
             sock.sendto(syn_packet, (dest_ip, dest_port))
             continue
-        (syn_nr_synack, ack_nr_synack, flags_synack, window_synack, size_synack, checksum_synack) = unpack(packet_format, data)
+        (str_id, syn_nr_synack, ack_nr_synack, flags_synack, window_synack, size_synack, checksum_synack, junk) = unpack(packet_format, data)
+        print("Got here too")
         pseudo_header_synack = pack(header_format, stream_id, syn_nr_synack, ack_nr_synack, flags_synack, window_synack, size_synack, 0)
-        if bTCP.calculate_checksum(pseudo_header_synack) != checksum_synack:
+        if bTCP.calculate_checksum(pseudo_header_synack + junk) != checksum_synack:
             print("Checksum synack doesn't match")
         else:
             break
 
-
+    print("And here")
   # ack creation
-    pseudo_header_ack = pack(header_format, stream_id, ack_nr_synack, syn_nr_synack+1, BTCP_ACK, window_synack, 0, 0)
-    bTCP_header_ack = pack(header_format, stream_id, ack_nr_synack, syn_nr_synack+1, BTCP_ACK, window_synack, 0, bTCP.calculate_checksum(pseudo_header_ack))
-    sock.sendto(bTCP_header_ack + data, (dest_ip, dest_port))
-
+    ack_packet = bTCP.make_packet(stream_id, ack_nr_synack, syn_nr_synack+1, BTCP_ACK, window_synack, 0, bytes(1000))
+    sock.sendto(ack_packet, (dest_ip, dest_port))
+    print("Aaaand here")
     return (stream_id, sock, window_synack)
   # send ack + data (or should we return first and then start off with the first ack (from the handshake)???
 
@@ -94,6 +93,8 @@ def disconnect(stream_id, seq, ack, dest_ip, dest_port, sock):
             sock.sendto( packet, (dest_ip, dest_port))
         else:
             break
+    fin = bTCP.make_packet(str_id, finack_seq, finack_ack, BTCP_ACK, finack_window, 0, bytes(1000))
+    sock.sendto( fin, (dest_ip, dest_port))
     return True
 
 
@@ -117,7 +118,8 @@ def send_file(filename, dest_ip, dest_port):
             if len(chunk) == 0:
                 file_done = True
                 break
-            packet = bTCP.make_packet(stream_id, seq, ack, BTCP_ACK, window, len(chunk), chunk)
+            packet = bTCP.make_packet(stream_id, seq, ack, BTCP_ACK, window, len(chunk.encode('utf-8')), chunk.encode('utf-8')
++ bytes(1000 - len(chunk.encode('utf-8'))))
             sock.sendto( packet, (dest_ip, dest_port))
             seq += len(chunk)
 

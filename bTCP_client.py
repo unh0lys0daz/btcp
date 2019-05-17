@@ -50,19 +50,19 @@ def connect(dest_ip, dest_port):
     syn_packet = bTCP_header_syn + pad_data
     # send syn
     sock.sendto(syn_packet, (dest_ip, dest_port))
-    # recv syn-ack, loop to handle corrupted package
+    # recv syn-ack, loop to handle corrupted packages and time-outs
     while True:
         sock.settimeout(args.timeout)
         try:
             (data, addr) = sock.recvfrom(1016)
         except socket.timeout:
             print("Timeout")
-            return None
+            sock.sendto(syn_packet, (dest_ip, dest_port))
+            continue
         (syn_nr_synack, ack_nr_synack, flags_synack, window_synack, size_synack, checksum_synack) = unpack(packet_format, data)
         pseudo_header_synack = pack(header_format, stream_id, syn_nr_synack, ack_nr_synack, flags_synack, window_synack, size_synack, 0)
         if bTCP.calculate_checksum(pseudo_header_synack) != checksum_synack:
             print("Checksum synack doesn't match")
-            sock.sendto(syn_packet, (dest_ip, dest_port))
         else:
             break
 

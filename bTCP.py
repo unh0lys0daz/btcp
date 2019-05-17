@@ -69,7 +69,7 @@ def calculate_checksum(packet):
 
 def make_packet(str_id, syn_nr, ack_nr, flags, window, size, data):
     pseudo_header = pack(header_format, str_id, syn_nr, ack_nr, flags, window, size, 0)
-    packet = pack(header_format, str_id, syn_nr, ack_nr, flags, window, size, calculate_checksum(pseudo_header)) + data
+    packet = pack(header_format, str_id, syn_nr, ack_nr, flags, window, size, calculate_checksum(pseudo_header+data)) + data
     return packet
 
 def get_checksum(str_id, syn_nr, ack_nr, flags, window, size, data):

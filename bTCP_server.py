@@ -39,7 +39,7 @@ while True:
     syn_data_length = syn_tuple[5]
     syn_checksum = syn_tuple[6]
 
-    syn_ack_reply = pack(header_format, syn_stream_ID, 0, 1, BTCP_SYN | BTCP_ACK, syn_window_size, syn_data_length, syn_checksum)
+    syn_ack_reply = pack(header_format, syn_stream_ID, 0, 1, BTCP_SYN | BTCP_ACK, syn_window_size, 0, )
     sock.sendto(syn_ack_reply, addr)
 
     #Receiving Ack
@@ -52,10 +52,32 @@ while True:
         print("Corrupt ACK")
 
     #Receiving data
-    while True:
-        file_done = False
+    file_done = False
+    while not file_done:
+        f = open(args.output, 'wb')
         data, addr = sock.recvfrom(1016)
-        data_tuple = unpack(packet_format, data)
-        data_FLAGS = data_tuple[3]
-        if data_FLAGS != BTCP_FIN:
-            
+        while(data):
+            data_tuple = unpack(packet_format, data)
+            data_FLAGS = data_tuple[3]
+            data_data = data_tuple[7] #Retrieving the data from the packet
+            if data_FLAGS != BTCP_FIN:
+                f.write(data_data)
+                data, addr = sock.recvfrom(1016)
+            elif: #Received FIN flag, final packet has been received and transfer is complete
+                file_done = True 
+
+    #Handshake for finishing tcp connection
+    #We assume we've already received the FIN packet in this situation because of the above loop
+    new_ack = data_tuple[2] + 1 #Increase the ack value by one
+    new_syn = data_tuple[1]     #syn number stays the same
+    new_FLAGS = BTCP_FIN | BTCP_ACK
+    temp_packet = pack(header_format, data_tuple[0], new_syn, new_ack, new_FLAGS, data_tuple[4], 0, 0)#For calculating the checksum
+    finack_reply = pack(header_format, data_tuple[0], new_syn, new_ack, new_FLAGS, data_tuple[4], 0, bTCP.calculate_checksum(temp_packet))
+    s.sendto(finack_reply, addr)  #Sending the FIN_ACK
+
+    #Receiving the final ACK and closing the connection
+    data, addr = sock.recvfrom(1016)
+    data_tuple = unpack(header_format, data)
+    if data_tuple[3] != BTCP_ACK:
+        print("Error in handshake, didn't receive final ACK")
+    sock.close() #Closing the connection

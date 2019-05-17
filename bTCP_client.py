@@ -7,7 +7,7 @@ import bTCP
 #Handle arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("-w", "--window", help="Define bTCP window size", type=int, default=100)
-parser.add_argument("-t", "--timeout", help="Define bTCP timeout in milliseconds", type=int, default=100)
+parser.add_argument("-t", "--timeout", help="Define bTCP timeout in seconds", type=float, default=0.100)
 parser.add_argument("-i","--input", help="File to send", default="tmp.file")
 args = parser.parse_args()
 
@@ -40,16 +40,18 @@ def connect(dest_ip, dest_port):
     pad_data = bytes(1000)
     stream_id = randint(1,100)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    window = args.window
+    timeout = args.timeout
 
     # syn packet creation
-    pseudo_header_syn = pack(header_format, stream_id, 0, 0, BTCP_SYN, 255, 0, 0)
-    bTCP_header_syn = pack(header_format, stream_id, 0, 0, BTCP_SYN, 255, 0, bTCP.calculate_checksum(pseudo_header_syn))
+    pseudo_header_syn = pack(header_format, stream_id, 0, 0, BTCP_SYN, window, 0, 0)
+    bTCP_header_syn = pack(header_format, stream_id, 0, 0, BTCP_SYN, window, 0, bTCP.calculate_checksum(pseudo_header_syn))
 
     syn_packet = bTCP_header_syn + pad_data
     # send syn
     sock.sendto(syn_packet, (dest_ip, dest_port))
     # recv syn-ack
-    sock.settimeout(2)
+    sock.settimeout(args.timeout)
     try:
         (data, addr) = sock.recvfrom(1016)
     except socket.timeout:
@@ -74,6 +76,27 @@ def connect(dest_ip, dest_port):
     return (stream_id, sock, window_synack)
   # send ack + data (or should we return first and then start off with the first ack (from the handshake)???
 
+def disconnect(stream_id, seq, ack, dest_ip, dest_port, sock):
+    packet = bTCP.make_packet( stream_id, seq, ack, BTCP_FIN | BTCP_ACK, args.window, 0, bytes(1000))
+    sock.sendto( packet, (dest_ip, dest_port))
+
+    while True:
+        sock.settimeout(args.timeout)
+
+        try:
+            (data, addr) = sock.recvfrom(1016)
+        except socket.timeout:
+            print("timeout while disconnecting")
+            return False
+        (str_id, finack_seq, finack_ack, finack_flags, finack_window, finack_siz, finack_checksum, junk) = unpack(packet_format, data)
+        chk = bTCP.get_checksum(str_id, finack_seq, finack_ack, finack_flags, finack_window, finack_siz)
+        if finack_checksum != chk:
+            print("CORRUPTED PACKET")
+            sock.sendto( packet, (dest_ip, dest_port))
+        else:
+            break
+    return True
+
 
 def send_file(filename, dest_ip, dest_port):
     try:
@@ -81,7 +104,11 @@ def send_file(filename, dest_ip, dest_port):
     except:
         print("Connection failed")
         return
-    file_handle = open(filename, 'r')
+    try:
+        file_handle = open(filename, 'r')
+    except:
+        print("Failed to open file, exiting...")
+        return
     seq = 1
     ack = 1
     while True:
@@ -100,7 +127,7 @@ def send_file(filename, dest_ip, dest_port):
 
         # Some nice loop to make handle corrupted packages being received
         while True:
-            sock.settimeout(2)
+            sock.settimeout(args.timeout)
             try:
                 data, addr = sock.recvfrom(1016)
             except socket.timeout:
@@ -112,6 +139,10 @@ def send_file(filename, dest_ip, dest_port):
                 sock.sendto( packet, (dest_ip, dest_port))
             else:
                 break
+    file_handle.close()
+    ret_val = disconnect(stream_id, seq, ack, dest_ip, dest_port, sock)
+    sock.close()
+    if ret_val:
+        print("succesfully disconnected")
 
-
-send_file("bTCP_server.py", "127.0.0.1", 9001)
+send_file(args.input, "127.0.0.1", 9001)

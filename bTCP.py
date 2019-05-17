@@ -72,7 +72,7 @@ def make_packet(str_id, syn_nr, ack_nr, flags, window, size, data):
     packet = pack(header_format, str_id, syn_nr, ack_nr, flags, window, size, calculate_checksum(pseudo_header)) + data
     return packet
 
-def get_checksum(str_id, syn_nr, ack_nr, flags, window, size):
+def get_checksum(str_id, syn_nr, ack_nr, flags, window, size, data):
     hdr = pack(header_format, str_id, syn_nr, ack_nr, flags, window, size, 0)
-    return calculate_checksum(hdr)
+    return calculate_checksum(hdr+data)
 

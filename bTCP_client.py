@@ -7,7 +7,7 @@ import bTCP
 #Handle arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("-w", "--window", help="Define bTCP window size", type=int, default=100)
-parser.add_argument("-t", "--timeout", help="Define bTCP timeout in seconds", type=float, default=0.100)
+parser.add_argument("-t", "--timeout", help="Define bTCP timeout in seconds", type=float, default=2.00)
 parser.add_argument("-i","--input", help="File to send", default="tmp.file")
 args = parser.parse_args()
 
@@ -50,22 +50,21 @@ def connect(dest_ip, dest_port):
     syn_packet = bTCP_header_syn + pad_data
     # send syn
     sock.sendto(syn_packet, (dest_ip, dest_port))
-    # recv syn-ack
-    sock.settimeout(args.timeout)
-    try:
-        (data, addr) = sock.recvfrom(1016)
-    except socket.timeout:
-        print("Timeout")
-        return None
-    synack_tuple = unpack(packet_format, data)
-    syn_nr_synack = synack_tuple[1]
-    ack_nr_synack = synack_tuple[2]
-    flags_synack = synack_tuple[3]
-    window_synack = synack_tuple[4]
-    size_synack = synack_tuple[5]
-    pseudo_header_synack = pack(header_format, stream_id, syn_nr_synack, ack_nr_synack, flags_synack, window_synack, size_synack, 0)
-    if bTCP.calculate_checksum(pseudo_header_synack) != synack_tuple[6]:
-        print("Checksum synack doesn't match")
+    # recv syn-ack, loop to handle corrupted package
+    while True:
+        sock.settimeout(args.timeout)
+        try:
+            (data, addr) = sock.recvfrom(1016)
+        except socket.timeout:
+            print("Timeout")
+            return None
+        (syn_nr_synack, ack_nr_synack, flags_synack, window_synack, size_synack, checksum_synack) = unpack(packet_format, data)
+        pseudo_header_synack = pack(header_format, stream_id, syn_nr_synack, ack_nr_synack, flags_synack, window_synack, size_synack, 0)
+        if bTCP.calculate_checksum(pseudo_header_synack) != checksum_synack:
+            print("Checksum synack doesn't match")
+            sock.sendto(syn_packet, (dest_ip, dest_port))
+        else:
+            break
 
 
   # ack creation
@@ -89,7 +88,7 @@ def disconnect(stream_id, seq, ack, dest_ip, dest_port, sock):
             print("timeout while disconnecting")
             return False
         (str_id, finack_seq, finack_ack, finack_flags, finack_window, finack_siz, finack_checksum, junk) = unpack(packet_format, data)
-        chk = bTCP.get_checksum(str_id, finack_seq, finack_ack, finack_flags, finack_window, finack_siz)
+        chk = bTCP.get_checksum(str_id, finack_seq, finack_ack, finack_flags, finack_window, finack_siz, junk)
         if finack_checksum != chk:
             print("CORRUPTED PACKET")
             sock.sendto( packet, (dest_ip, dest_port))
@@ -134,7 +133,7 @@ def send_file(filename, dest_ip, dest_port):
                 print("TIMEOUT")
                 return False
             (str_id, syn_recv, seq, flag, window, siz, checksum, junk) = unpack(packet_format, data)
-            if checksum != bTCP.get_checksum(str_id, syn_recv, seq, flag, window, siz):
+            if checksum != bTCP.get_checksum(str_id, syn_recv, seq, flag, window, siz, junk):
                 print("CORRUPTED PACKET")
                 sock.sendto( packet, (dest_ip, dest_port))
             else:

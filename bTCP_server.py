@@ -30,41 +30,49 @@ while True:
     print(unpack(header_format,data))
 
     #Receiving Syn, sending Syn_Ack
-    syn_tuple = unpack(header_format, data)
-    syn_stream_ID = syn_tuple[0]
-    syn_SYN = syn_tuple[1]
-    syn_ACK = syn_tuple[2]
-    syn_FLAGS = syn_tuple[3]
-    syn_window_size = syn_tuple[4]
-    syn_data_length = syn_tuple[5]
-    syn_checksum = syn_tuple[6]
+    (stream_id,syn_rec, ack_rec, flag_rec, window_rec, size_rec, checks_rec, junk) = unpack(packet_format, data)
+    checksum = bTCP.get_checksum(stream_id, syn_rec, ack_rec, window_rec, size_rec, junk)
+    if checksum != checks_rec:
+        continue
 
-    syn_ack_reply = pack(header_format, syn_stream_ID, 0, 1, BTCP_SYN | BTCP_ACK, syn_window_size, 0, )
+    syn_ack_reply = bTCP.make_packet(stream_id, 0, 1, BTCP_SYN | BTCP_ACK, args.window, 0, bytes(1000))
     sock.sendto(syn_ack_reply, addr)
 
     #Receiving Ack
-    data, addr = sock.recvfrom(1016)
-    ack_tuple = unpack(header_format, data)
+    while True:
+        sock.settimeout(args.timeout)
+        try:
+            data, addr = sock.recvfrom(1016)
+        except socket.timeout:
+            print("Timeout")
+            sock.sendto(syn_ack_reply, addr)
+            continue
+    ack_tuple = unpack(packet_format, data)
     ack_stream_ID = ack_tuple[0]
     ack_FLAGS = ack_tuple[3]
     ack_checksum = ack_tuple[6]
-    if (ack_FLAGS != BTCP_ACK) | (ack_checksum != syn_checksum):
+    if (ack_FLAGS != BTCP_ACK):
         print("Corrupt ACK")
 
     #Receiving data
     file_done = False
-    while not file_done:
-        f = open(args.output, 'wb')
-        data, addr = sock.recvfrom(1016)
-        while(data):
+    file_handle = open(args.output, 'wb')
+    seq = 1
+    while not file_done
+        for i in range(args.window):
+            data, addr = sock.recvfrom(1016)
             data_tuple = unpack(packet_format, data)
             data_FLAGS = data_tuple[3]
+            data_size = data_tuple[5]
+            seq += data_size
             data_data = data_tuple[7] #Retrieving the data from the packet
-            if data_FLAGS != BTCP_FIN:
-                f.write(data_data)
-                data, addr = sock.recvfrom(1016)
+            if (data_FLAGS & BTCP_FIN) != BTCP_FIN:
+                file_handle.write(data_data[:data_size])
             elif: #Received FIN flag, final packet has been received and transfer is complete
-                file_done = True 
+                file_done = True
+                break
+        reply = bTCP.make_packet(stream_id, 1, seq, BTCP_ACK, args.window, 0, bytes(1000))
+        sock.sendto(reply, addr)
 
     #Handshake for finishing tcp connection
     #We assume we've already received the FIN packet in this situation because of the above loop
